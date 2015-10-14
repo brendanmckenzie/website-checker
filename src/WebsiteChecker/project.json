@@ -1,0 +1,17 @@
+{
+  "version": "1.0.0-*",
+  "description": "WebsiteChecker CLI Application",
+  "authors": [
+    "Brendan McKenzie"
+  ],
+  "tags": [
+    ""
+  ],
+  "projectUrl": "",
+  "licenseUrl": "",
+  "dependencies": {
+  },
+  "frameworks": {
+    "dnx451": {}
+  }
+}
