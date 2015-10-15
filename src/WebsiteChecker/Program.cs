@@ -22,6 +22,10 @@ namespace WebsiteChecker
             var processed = new List<Uri>();
             var processList = new Queue<Uri>();
             processList.Enqueue(baseUri);
+            var results = new List<PageInfo>();
+
+            var stopwatch = new Stopwatch();
+            stopwatch.Start();
 
             while (processList.Count > 0)
             {
@@ -29,6 +33,8 @@ namespace WebsiteChecker
                 processed.Add(uri);
 
                 var info = GetPageInfo(uri);
+
+                results.Add(info);
 
                 Console.Write(info);
 
@@ -40,8 +46,40 @@ namespace WebsiteChecker
                     }
                 }
             }
+            stopwatch.Stop();
+            var elapsed = (double)stopwatch.ElapsedMilliseconds / 1000.0;
+
             Console.WriteLine("---------");
-            Console.WriteLine($"Processed: {processed.Count} links");
+            Console.WriteLine($"Processed: {processed.Count} links, total time: {elapsed:N0}");
+
+            OutputReport(results);
+
+            Console.WriteLine("done.");
+        }
+
+        static void OutputReport(IEnumerable<PageInfo> pages)
+        {
+            var problems = pages.Where(ent => ent.ResponseCode != 200);
+            if (problems.Any())
+            {
+                Console.WriteLine("Problems");
+                Console.WriteLine("--------");
+                foreach (var grp in problems.GroupBy(ent => ent.ResponseCode))
+                {
+                    Console.WriteLine($" {grp.Key}");
+
+                    foreach (var ent in grp)
+                    {
+                        Console.WriteLine($"   {ent.Url}");
+                    }
+
+                    Console.WriteLine();
+                }
+            }
+
+            var slowest = pages.FirstOrDefault(ent => ent.LoadTime == pages.Select(ent2 => ent2.LoadTime).Max());
+            Console.WriteLine("Slowest page");
+            Console.WriteLine(slowest);
         }
 
         static PageInfo GetPageInfo(Uri url)
@@ -92,15 +130,24 @@ namespace WebsiteChecker
                 .Select(ent => ent.Groups[3].Value)
                 .Where(ent => ent.StartsWith("/") || ent.StartsWith("http"))
                 .Select(ent => {
-                    if (ent.StartsWith("/"))
+                    try
                     {
-                        return new Uri(originalUrl, new Uri(ent, UriKind.Relative));
+                        if (ent.StartsWith("/"))
+                        {
+                            return new Uri(originalUrl, new Uri(ent, UriKind.Relative));
+                        }
+                        else
+                        {
+                            return new Uri(ent);
+                        }
                     }
-                    else
+                    catch
                     {
-                        return new Uri(ent);
+                        return null;
+                        // problem URL...
                     }
                 })
+                .Where(ent => ent != null)
                 .Distinct()
                 .Where(ent => ent != originalUrl)
                 .Where(ent => ent.Host == originalUrl.Host);
@@ -123,7 +170,7 @@ namespace WebsiteChecker
         {
             var width = Console.BufferWidth - 42;
 
-            var url = Url.ToString().Length > (width - 2) ? ("..." + Url.ToString().Substring(0, (width - 5))) : Url.ToString();
+            var url = Url.ToString().Length > (width - 2) ? ("..." + Url.ToString().Substring(Url.ToString().Length - (width - 5))) : Url.ToString();
             url += new string(' ', width - url.Length);
 
             return $"{url} {ResponseCode,5} {ContentType.Split(';').First(),15} {LoadTime,5:N0}ms {Links?.Count(),5:N0} links";
