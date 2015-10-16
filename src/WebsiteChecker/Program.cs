@@ -5,6 +5,7 @@ using System.Net;
 using System.Threading;
 using System.Threading.Tasks;
 using System.Diagnostics;
+using System.Text;
 using System.Text.RegularExpressions;
 
 namespace WebsiteChecker
@@ -195,10 +196,44 @@ namespace WebsiteChecker
         {
             var width = Console.BufferWidth - 42;
 
-            var url = Url.ToString().Length > (width - 2) ? ("..." + Url.ToString().Substring(Url.ToString().Length - (width - 5))) : Url.ToString();
-            url += new string(' ', width - url.Length);
+            var fields = new Dictionary<object, int>();
+            fields.Add(Url.ToString(), -1);
+            fields.Add(" ", 1);
+            fields.Add(ResponseCode, 5);
+            fields.Add(ContentType.Split(';').First(), 15);
+            fields.Add($"{LoadTime,5:N0}ms", 8);
+            fields.Add($"{Links.Count(),4:N0} links", 10);
 
-            return $"{url} {ResponseCode,5} {ContentType.Split(';').First(),15} {LoadTime,5:N0}ms {Links?.Count(),5:N0} links";
+            var expandoWidth = -1;
+            var totalWidth = Console.BufferWidth;
+            var hasExpando = fields.Values.Count(ent => ent == -1) == 1;
+            if (hasExpando)
+            {
+                var totalSpecified = fields.Values.Where(ent => ent != -1).Sum();
+                expandoWidth = totalWidth - totalSpecified;
+            }
+
+            var ret = new StringBuilder();
+            foreach (var field in fields)
+            {
+                var val = field.Key.ToString();
+                var len = field.Value;
+                if (len == -1) { len = expandoWidth; }
+
+                if (val.Length > len)
+                {
+                    val = "..." + val.Substring(val.Length - len + 3);
+                }
+
+                if (val.Length < len)
+                {
+                    val = val + new string(' ', len - val.Length);
+                }
+
+                ret.Append(val);
+            }
+
+            return ret.ToString();
         }
     }
 }
