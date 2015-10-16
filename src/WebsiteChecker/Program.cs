@@ -2,6 +2,8 @@ using System;
 using System.Linq;
 using System.Collections.Generic;
 using System.Net;
+using System.Threading;
+using System.Threading.Tasks;
 using System.Diagnostics;
 using System.Text.RegularExpressions;
 
@@ -20,37 +22,56 @@ namespace WebsiteChecker
             Console.WriteLine("---------");
 
             var processed = new List<Uri>();
-            var processList = new Queue<Uri>();
-            processList.Enqueue(baseUri);
+            var processList = new List<Uri>();
+            processList.Add(baseUri);
             var results = new List<PageInfo>();
 
             var stopwatch = new Stopwatch();
             stopwatch.Start();
 
-            while (processList.Count > 0)
+            var nextList = processList;
+            while (nextList.Any())
             {
-                var uri = processList.Dequeue();
-                processed.Add(uri);
-
-                var info = GetPageInfo(uri);
-
-                results.Add(info);
-
-                Console.Write(info);
-
-                foreach (var link in info.Links)
-                {
-                    if (!processed.Contains(link) && !processList.Contains(link))
+                processList = nextList;
+                nextList = new List<Uri>();
+                Parallel.ForEach(processList, (uri) => {
+                    lock(processed)
                     {
-                        processList.Enqueue(link);
+                        processed.Add(uri);
                     }
-                }
+
+                    var info = GetPageInfo(uri);
+
+                    lock(results)
+                    {
+                        results.Add(info);
+                    }
+
+                    Console.Write(info);
+
+                    lock(processed)
+                    {
+                        lock(nextList)
+                        {
+                            foreach (var link in info.Links)
+                            {
+                                if (!processed.Contains(link) && !nextList.Contains(link))
+                                {
+                                    nextList.Add(link);
+                                }
+                            }
+                        }
+                    }
+                });
             }
+
+
             stopwatch.Stop();
             var elapsed = (double)stopwatch.ElapsedMilliseconds / 1000.0;
+            var average = (double)stopwatch.ElapsedMilliseconds / processed.Count;
 
             Console.WriteLine("---------");
-            Console.WriteLine($"Processed: {processed.Count} links, total time: {elapsed:N0}");
+            Console.WriteLine($"Processed: {processed.Count} links, total time: {elapsed:N0}s, average response: {average:N0}ms");
 
             OutputReport(results);
 
@@ -84,7 +105,7 @@ namespace WebsiteChecker
 
         static PageInfo GetPageInfo(Uri url)
         {
-            using (var client = new WebClient())
+            using (var client = new WebClientEx())
             {
                 var stopwatch = new Stopwatch();
                 stopwatch.Start();
@@ -150,6 +171,10 @@ namespace WebsiteChecker
                 .Where(ent => ent != null)
                 .Distinct()
                 .Where(ent => ent != originalUrl)
+                .Where(ent => !(ent.ToString().EndsWith("jpg")))
+                .Where(ent => !(ent.ToString().EndsWith("png")))
+                .Where(ent => !(ent.ToString().EndsWith("mp3")))
+                .Where(ent => !(ent.ToString().EndsWith("pdf")))
                 .Where(ent => ent.Host == originalUrl.Host);
 
             return ret;
