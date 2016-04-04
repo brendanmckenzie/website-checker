@@ -22,10 +22,13 @@ namespace WebsiteChecker
             Console.WriteLine(baseUri);
             Console.WriteLine("---------");
 
-            var processed = new List<Uri>();
-            var processList = new List<Uri>();
-            processList.Add(baseUri);
-            var results = new List<PageInfo>();
+            var processed = new List<PageScrapRequest>();
+            var processList = new List<PageScrapRequest>();
+            processList.Add(new PageScrapRequest()
+            {
+                Url = baseUri
+            });
+            var results = new Dictionary<Uri, PageInfo>();
 
             var stopwatch = new Stopwatch();
             stopwatch.Start();
@@ -34,18 +37,27 @@ namespace WebsiteChecker
             while (nextList.Any())
             {
                 processList = nextList;
-                nextList = new List<Uri>();
-                Parallel.ForEach(processList, (uri) => {
-                    lock(processed)
+                nextList = new List<PageScrapRequest>();
+                Parallel.ForEach(processList, (request) => {
+                    if (results.ContainsKey(request.Url))
                     {
-                        processed.Add(uri);
+                        return;
                     }
 
-                    var info = GetPageInfo(uri);
+                    lock(processed)
+                    {
+                        processed.Add(request);
+                    }
 
+                    var info = GetPageInfo(request.Url);
+                    if (request.ParentUrl != null && results.ContainsKey(request.ParentUrl))
+                    {
+                        info.ReferencedBy.Add(results[request.ParentUrl]);
+                    }
+                    
                     lock(results)
                     {
-                        results.Add(info);
+                        results.Add(request.Url, info);
                     }
 
                     Console.Write(info);
@@ -56,9 +68,19 @@ namespace WebsiteChecker
                         {
                             foreach (var link in info.Links)
                             {
-                                if (!processed.Contains(link) && !nextList.Contains(link))
+                                if (results.ContainsKey(link) && results.ContainsKey(link))
                                 {
-                                    nextList.Add(link);
+                                    results[link].ReferencedBy.Add(results[link]);
+                                    continue;
+                                }
+
+                                if (!processed.Any(r => r.Url == link) && !nextList.Any(r => r.Url == link))
+                                {
+                                    nextList.Add(new PageScrapRequest()
+                                    {
+                                        ParentUrl = request.Url,
+                                        Url = link
+                                    });
                                 }
                             }
                         }
@@ -74,7 +96,7 @@ namespace WebsiteChecker
             Console.WriteLine("---------");
             Console.WriteLine($"Processed: {processed.Count} links, total time: {elapsed:N0}s, average response: {average:N0}ms");
 
-            OutputReport(results);
+            OutputReport(results.Values);
 
             Console.WriteLine("done.");
         }
@@ -93,6 +115,10 @@ namespace WebsiteChecker
                     foreach (var ent in grp)
                     {
                         Console.WriteLine($"   {ent.Url}");
+                        foreach(var parent in ent.ReferencedBy)
+                        {
+                            Console.WriteLine($"  Found in: {parent.Url}");
+                        }
                     }
 
                     Console.WriteLine();
@@ -182,13 +208,25 @@ namespace WebsiteChecker
         }
     }
 
+    class PageScrapRequest
+    {
+        public Uri ParentUrl { get; set; }
+        public Uri Url { get; set; }
+    }
     class PageInfo
     {
+        public PageInfo()
+        {
+            ReferencedBy = new List<PageInfo>();
+        }
+
         public int ResponseCode { get; set; }
         public string ContentType { get; set; }
         public long LoadTime { get; set; }
 
         public Uri Url { get; set; }
+
+        public IList<PageInfo> ReferencedBy { get; private set; }
 
         public IEnumerable<Uri> Links { get; set; }
 
