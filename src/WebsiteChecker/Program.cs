@@ -1,12 +1,12 @@
 using System;
-using System.Linq;
 using System.Collections.Generic;
-using System.Net;
-using System.Threading;
-using System.Threading.Tasks;
 using System.Diagnostics;
+using System.Linq;
+using System.Net;
+using System.Net.Http;
 using System.Text;
 using System.Text.RegularExpressions;
+using System.Threading.Tasks;
 
 namespace WebsiteChecker
 {
@@ -14,10 +14,10 @@ namespace WebsiteChecker
     {
         public static void Main(string[] args)
         {
-            Run(new Uri(args[0]));
+            Run(new Uri(args[0])).Wait();
         }
 
-        static void Run(Uri baseUri)
+        static async Task Run(Uri baseUri)
         {
             Console.WriteLine(baseUri);
             Console.WriteLine("---------");
@@ -35,24 +35,26 @@ namespace WebsiteChecker
             {
                 processList = nextList;
                 nextList = new List<Uri>();
-                Parallel.ForEach(processList, (uri) => {
-                    lock(processed)
+
+                foreach (var uri in processList)
+                {
+                    lock (processed)
                     {
                         processed.Add(uri);
                     }
 
-                    var info = GetPageInfo(uri);
+                    var info = await GetPageInfo(uri);
 
-                    lock(results)
+                    lock (results)
                     {
                         results.Add(info);
                     }
 
                     Console.Write(info);
 
-                    lock(processed)
+                    lock (processed)
                     {
-                        lock(nextList)
+                        lock (nextList)
                         {
                             foreach (var link in info.Links)
                             {
@@ -63,7 +65,7 @@ namespace WebsiteChecker
                             }
                         }
                     }
-                });
+                };
             }
 
 
@@ -104,25 +106,41 @@ namespace WebsiteChecker
             Console.WriteLine(slowest);
         }
 
-        static PageInfo GetPageInfo(Uri url)
+        static async Task<PageInfo> GetPageInfo(Uri url)
         {
-            using (var client = new WebClientEx())
+            Console.WriteLine(" ");
+            using (var client = new HttpClient())
             {
                 var stopwatch = new Stopwatch();
                 stopwatch.Start();
 
                 try
                 {
-                    var source = client.DownloadString(url);
+                    var baseAddress = new UriBuilder(url)
+                    {
+                        Path = string.Empty,
+                        Query = string.Empty
+                    };
+
+                    client.BaseAddress = baseAddress.Uri;
+
+                    var request = new HttpRequestMessage(HttpMethod.Get, url.PathAndQuery);
+
+                    var res = await client.SendAsync(request);
+
+                    var source = await res.Content.ReadAsStringAsync();
+
+                    var contentType = new[] { "unknown" }.AsEnumerable();
+                    res.Headers.TryGetValues("Content-Type", out contentType);
 
                     stopwatch.Stop();
 
                     return new PageInfo
                     {
                         Url = url,
-                        ResponseCode = 200, // TODO: ... this
+                        ResponseCode = (int)res.StatusCode,
                         LoadTime = stopwatch.ElapsedMilliseconds,
-                        ContentType = client.ResponseHeaders["Content-Type"],
+                        ContentType = contentType?.FirstOrDefault(),
                         Links = GetLinks(url, source)
                     };
                 }
@@ -151,7 +169,8 @@ namespace WebsiteChecker
                 .Cast<Match>()
                 .Select(ent => ent.Groups[3].Value)
                 .Where(ent => ent.StartsWith("/") || ent.StartsWith("http"))
-                .Select(ent => {
+                .Select(ent =>
+                {
                     try
                     {
                         if (ent.StartsWith("/"))
@@ -194,30 +213,31 @@ namespace WebsiteChecker
 
         public override string ToString()
         {
-            var width = Console.BufferWidth - 42;
+            var bufferWidth = 80; // Console.BufferWidth
+            var width = bufferWidth - 42;
+            var totalWidth = bufferWidth;
 
-            var fields = new Dictionary<object, int>();
-            fields.Add(Url.ToString(), -1);
-            fields.Add(" ", 1);
-            fields.Add(ResponseCode, 5);
-            fields.Add(ContentType.Split(';').First(), 15);
-            fields.Add($"{LoadTime,5:N0}ms", 8);
-            fields.Add($"{Links.Count(),4:N0} links", 10);
+            var fields = new List<Tuple<string, int>>();
+            fields.Add(new Tuple<string, int>(Url?.ToString(), -1));
+            fields.Add(new Tuple<string, int>(" ", 1));
+            fields.Add(new Tuple<string, int>(ResponseCode.ToString(), 5));
+            fields.Add(new Tuple<string, int>(ContentType?.Split(';').First(), 15));
+            fields.Add(new Tuple<string, int>($"{LoadTime,5:N0}ms", 8));
+            fields.Add(new Tuple<string, int>($"{Links?.Count(),4:N0} links", 10));
 
             var expandoWidth = -1;
-            var totalWidth = Console.BufferWidth;
-            var hasExpando = fields.Values.Count(ent => ent == -1) == 1;
+            var hasExpando = fields.Select(ent => ent.Item2).Count(ent => ent == -1) == 1;
             if (hasExpando)
             {
-                var totalSpecified = fields.Values.Where(ent => ent != -1).Sum();
+                var totalSpecified = fields.Select(ent => ent.Item2).Where(ent => ent != -1).Sum();
                 expandoWidth = totalWidth - totalSpecified;
             }
 
             var ret = new StringBuilder();
             foreach (var field in fields)
             {
-                var val = field.Key.ToString();
-                var len = field.Value;
+                var val = field.Item1?.ToString() ?? string.Empty;
+                var len = field.Item2;
                 if (len == -1) { len = expandoWidth; }
 
                 if (val.Length > len)
