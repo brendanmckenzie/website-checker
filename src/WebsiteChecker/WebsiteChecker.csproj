@@ -1,13 +1,11 @@
 ﻿<Project Sdk="Microsoft.NET.Sdk">
 
   <PropertyGroup>
-    <TargetFramework>netcoreapp1.0</TargetFramework>
+    <TargetFramework>net8.0</TargetFramework>
     <DebugType>portable</DebugType>
     <AssemblyName>WebsiteChecker</AssemblyName>
     <OutputType>Exe</OutputType>
     <PackageId>WebsiteChecker</PackageId>
-    <PackageTargetFallback>$(PackageTargetFallback);dnxcore50</PackageTargetFallback>
-    <RuntimeFrameworkVersion>1.0.3</RuntimeFrameworkVersion>
   </PropertyGroup>
 
 </Project>
